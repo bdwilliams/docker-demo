@@ -1,0 +1,15 @@
+version: "2"
+
+services:
+  registrator:  
+    command: consul://${CONSUL_MASTER}:8500
+    image: gliderlabs/registrator:latest
+    restart: always
+    volumes:
+      - "/var/run/docker.sock:/tmp/docker.sock"
+    networks:
+      - app
+
+networks:
+  app:
+    driver: overlay

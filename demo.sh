@@ -1,15 +1,8 @@
 #!/bin/bash
 set -x
 
-export WEAVE_HOSTS=""
 export TOTAL_NODES=2
 export PWD=`pwd`
-
-# quick reset hack
-for i in `docker-machine ls | grep -v "NAME" | awk '{ print $1; }'`;
-do
-	docker-machine rm -f $i;
-done
 
 # setup swarm nodes
 for i in $(seq 1 $TOTAL_NODES); do
@@ -22,7 +15,6 @@ for i in $(seq 1 $TOTAL_NODES); do
 	fi
 
 	docker-machine create -d virtualbox --swarm ${SWARM_MASTER} --swarm-discovery="consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-store=consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-advertise=eth1:2376" swarm-node-$i
-	export WEAVE_HOSTS="${WEAVE_HOSTS} $(docker-machine ip swarm-node-$i)"
 
 	if [ $i == 1 ]; then
 		# configure consul-master

@@ -1,6 +1,7 @@
 #!/bin/bash
-set -x
+# set -x
 
+export LOADBALANCERS=""
 export TOTAL_NODES=2
 export PWD=`pwd`
 
@@ -15,6 +16,8 @@ for i in $(seq 1 $TOTAL_NODES); do
 	fi
 
 	docker-machine create -d virtualbox --swarm ${SWARM_MASTER} --swarm-discovery="consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-store=consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-advertise=eth1:2376" swarm-node-$i
+	NODE_IP=$(docker-machine ip swarm-node-$i)
+	export LOADBALANCERS="${LOADBALANCERS} ${NODE_IP}"
 
 	if [ $i == 1 ]; then
 		# configure consul-master
@@ -39,6 +42,13 @@ docker-compose -f compose/apps.yml up -d
 eval $(docker-machine env --swarm swarm-node-1)
 docker-compose -f compose/apps.yml scale web=10
 
+# configure a load balancer for each node
+export CONSUL_MASTER=$(docker-machine ip swarm-node-1)
+eval $(docker-machine env --swarm swarm-node-1)
+for i in $(seq 1 $TOTAL_NODES); do
+	docker run -d --name lb-${i} -p 80:80 -e APP_NAME=example_app -e CONSUL_URL=${CONSUL_MASTER}:8500 --net app hanzel/load-balancing-swarm
+done
+
 export SWARM_MASTER_NODE=$(docker-machine ip swarm-node-1)
 
 echo "Checking Docker Machine List:";
@@ -49,3 +59,7 @@ eval $(docker-machine env --swarm swarm-node-1)
 docker info
 
 echo "CONSUL UI = http://${CONSUL_MASTER}:8500";
+
+for i in $LOADBALANCERS; do
+	echo "WEB LB: http://${i}";
+done

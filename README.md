@@ -1,4 +1,4 @@
-# Docker + Machine + Swarm + Compose
+# Docker + Machine + Swarm + Compose + Consul + Registrator
 
 A quick docker test environment to test failover scenarios
 
@@ -9,5 +9,13 @@ A quick docker test environment to test failover scenarios
 <pre>
 git clone git@github.com:bdwilliams/docker-demo.git
 cd docker-demo
-vagrant up
+./demo.sh
 </pre>
+
+## TODO
+
+* Consul cluster (Currently single-node)
+* Registrator cluster (Currently single-node)
+* Database Tier
+* Failover Scenarios
+* Persistent Volumes

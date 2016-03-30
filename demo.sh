@@ -1,7 +1,9 @@
 #!/bin/bash
+# set -x
 
+export TOTAL_NODES=1 # how many host (swarm) nodes should be running
+export WEB_SCALE=10 # how many nodes should be running after the web service scale
 export LOADBALANCERS=""
-export TOTAL_NODES=2
 export PWD=`pwd`
 
 function banner () {
@@ -47,38 +49,39 @@ function get_trinity_id(){
   cat ${TRINITY_ID}
 }
 
-echoInfo "Creating ${TOTAL_NODES} swarm nodes"
+banner
+
+echoInfo "Creating ${TOTAL_NODES} swarm nodes";
 # setup swarm nodes
 for i in $(seq 1 $TOTAL_NODES)
 do
-	if [ $i == 1 ]; then
-		export SWARM_MASTER="--swarm-master";
-		export CONSUL_MASTER="127.0.0.1"
-	else
-		export CONSUL_MASTER=$(docker-machine ip swarm-node-1)
-		export SWARM_MASTER=""
+	STATUS=$(docker-machine status swarm-node-$i 2>&1)
+	if [ $? -ne 0 ]; then
+		if [ $i == 1 ]; then
+			export SWARM_MASTER="--swarm-master";
+			export CONSUL_MASTER="127.0.0.1"
+		else
+			export CONSUL_MASTER=$(docker-machine ip swarm-node-1)
+			export SWARM_MASTER=""
+		fi
+
+		docker-machine create -d virtualbox --swarm ${SWARM_MASTER} --swarm-discovery="consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-store=consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-advertise=eth1:2376" swarm-node-$i
+		NODE_IP=$(docker-machine ip swarm-node-$i)
+		export LOADBALANCERS="${LOADBALANCERS} ${NODE_IP}"
+
+	  if [ $i == 1 ]; then
+			# configure consul-master
+			eval $(docker-machine env swarm-node-$i)
+			docker-compose -f compose/consul-master.yml up -d
+		else
+			# configure consul-slave
+			eval $(docker-machine env swarm-node-$i)
+			# docker-compose -f compose/consul-slave.yml up -d
+		fi
 	fi
-
-	docker-machine create -d virtualbox --swarm ${SWARM_MASTER} --swarm-discovery="consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-store=consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-advertise=eth1:2376" swarm-node-$i
-  if [ $? -ne 0 ]
-  then
-    NODE_IP=$(docker-machine ip swarm-node-$i)
-    export LOADBALANCERS="${LOADBALANCERS} ${NODE_IP}"
-
-    if [ $i == 1 ]
-    then
-      # configure consul-master
-      eval $(docker-machine env swarm-node-$i)
-      docker-compose -f compose/consul-master.yml up -d
-    else
-      # configure consul-slave
-      eval $(docker-machine env swarm-node-$i)
-      docker-compose -f compose/consul-slave.yml up -d
-    fi
-  fi
 done
 
-# set up shared networking
+#set up shared networking
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 NETWORK_ID=$(VBoxManage showvminfo swarm-node-1 --machinereadable | grep hostonlyadapter | cut -d'"' -f2)
 NFS_HOST_IP=$(VBoxManage list hostonlyifs | grep "${NETWORK_ID}" -A 3 | grep IPAddress | cut -d ':' -f2 | xargs)
@@ -121,9 +124,26 @@ for i in $(seq 1 $TOTAL_NODES); do
   docker-machine ssh swarm-node-$i "sudo chmod +x ${BOOTLOCAL_FILE} && sync && tce-status -i | grep -q bash || tce-load -wi bash && bash /var/lib/boot2docker/bootlocal.sh"
 done
 
-# configure registrator in the swarm master
+# make sure swarm is ready/healthy
 eval $(docker-machine env --swarm swarm-node-1)
-docker-compose -f compose/registrator.yml up -d
+COUNTER=0
+while [ "`docker network create -d overlay example_app_temp > /dev/null 2>&1; echo $?`" -ne 0 ]; do
+	COUNTER=$[$COUNTER +1]
+	echo "${COUNTER} -- Waiting for swarm to become healthy"
+	sleep 5;
+
+	if [[ $COUNTER -gt 30 ]]; then
+	  echo "Demo failed due to timeout...";
+	  exit 1
+	fi
+done
+
+# cleanup health check
+docker network rm example_app_temp
+
+# 
+export CONSUL_MASTER=$(docker-machine ip swarm-node-1)
+export SWARM_MASTER_NODE=$(docker-machine ip swarm-node-1)
 
 # run some apps
 eval $(docker-machine env --swarm swarm-node-1)
@@ -131,16 +151,7 @@ docker-compose -f compose/apps.yml up -d
 
 # now lets test some scaling
 eval $(docker-machine env --swarm swarm-node-1)
-docker-compose -f compose/apps.yml scale web=10
-
-# configure a load balancer for each node
-export CONSUL_MASTER=$(docker-machine ip swarm-node-1)
-eval $(docker-machine env --swarm swarm-node-1)
-for i in $(seq 1 $TOTAL_NODES); do
-	docker run -d --name lb-${i} -p 80:80 -e APP_NAME=example_app -e CONSUL_URL=${CONSUL_MASTER}:8500 --net app hanzel/load-balancing-swarm
-done
-
-export SWARM_MASTER_NODE=$(docker-machine ip swarm-node-1)
+docker-compose -f compose/apps.yml scale web=${WEB_SCALE}
 
 echo "Checking Docker Machine List:";
 docker-machine ls

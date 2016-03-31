@@ -3,15 +3,15 @@ version: "2"
 services:
   consul:
     restart: always
-    command: -server -client 0.0.0.0 -join ${CONSUL_MASTER} --data-dir /var/consul -ui
+    command: -server -client 0.0.0.0 -advertise ${NODE_IP} -join ${CONSUL_MASTER} --data-dir /var/consul -ui
     image: gliderlabs/consul-agent:0.6
     ports:
+      - 8300:8300
       - 8301:8301
       - 8301:8301/udp
       - 8302:8302
       - 8302:8302/udp
       - 8400:8400
       - 8500:8500
-      - 8500:8500/udp
       - 8600:53/udp
       - 53:53/udp

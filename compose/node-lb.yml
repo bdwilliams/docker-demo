@@ -1,0 +1,16 @@
+version: '2'
+
+services:
+  lb:
+    image: bdwilliams/nginx-consul-template
+    ports:
+      - "80"
+    environment:
+      - APP_NAME=rethinkdb-simple-app
+      - CONSUL_URL=${CONSUL_MASTER}:8500
+    networks:
+      - front
+
+networks:
+  front:
+    driver: overlay

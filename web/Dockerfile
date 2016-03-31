@@ -5,5 +5,5 @@ RUN mkdir -p /opt
 ADD web.go /opt
 RUN cd /opt && go get -d . && go build web.go
 
-EXPOSE 8080
-ENTRYPOINT ["/opt/web"]
+EXPOSE 8000
+CMD ["/opt/web"]

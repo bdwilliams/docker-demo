@@ -1,0 +1,11 @@
+version: '2'
+
+services:
+  lb:
+    image: bdwilliams/nginx-consul-template
+    ports:
+      - "80:80"
+    environment:
+      - SERVICE_NAME=main-lb
+      - APP_NAME=nginx-consul-template
+      - CONSUL_URL=${CONSUL_MASTER}:8500

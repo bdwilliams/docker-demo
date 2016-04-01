@@ -60,35 +60,9 @@ if [ $? -ne 0 ]; then
 	docker-compose -f compose/consul-master.yml up -d
 fi
 
-export CONSUL_MASTER=$(docker-machine ip swarm-node-consul)
-echoInfo "Creating ${TOTAL_NODES} swarm nodes";
-# setup swarm nodes
-for i in $(seq 1 $TOTAL_NODES)
-do
-	STATUS=$(docker-machine status swarm-node-$i 2>&1)
-	if [ $? -ne 0 ]; then
-		if [ $i == 1 ]; then
-			export SWARM_MASTER="--swarm-master";
-		else
-			export SWARM_MASTER=""
-		fi
-
-		docker-machine create -d virtualbox --swarm ${SWARM_MASTER} --swarm-discovery="consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-store=consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-advertise=eth1:2376" swarm-node-$i
-		eval $(docker-machine env swarm-node-$i)
-		export NODE_IP=$(docker-machine ip swarm-node-$i)
-		docker-compose -f compose/consul-agent.yml up -d
-		docker-compose -f compose/registrator.yml up -d
-
-		if [ $i == 1 ]; then
-			# setup a load balancer
-			docker-compose -f compose/node-lb.yml up -d
-		fi
-	fi
-done
-
 # set up shared networking
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-NETWORK_ID=$(VBoxManage showvminfo swarm-node-1 --machinereadable | grep hostonlyadapter | cut -d'"' -f2)
+NETWORK_ID=$(VBoxManage showvminfo swarm-node-consul --machinereadable | grep hostonlyadapter | cut -d'"' -f2)
 NFS_HOST_IP=$(VBoxManage list hostonlyifs | grep "${NETWORK_ID}" -A 3 | grep IPAddress | cut -d ':' -f2 | xargs)
 NETWORK=$(echo "${NFS_HOST_IP}" | awk -F '.' '{print $1"."$2".0.0"}')
 MASK=255.255.0.0
@@ -123,11 +97,50 @@ else
   exit 1
 fi
 
-for i in $(seq 1 $TOTAL_NODES); do
-  BOOTLOCAL_FILE="/var/lib/boot2docker/bootlocal.sh"
-  echo "${BOOTLOCAL_SH}" | docker-machine ssh swarm-node-$i "sudo tee ${BOOTLOCAL_FILE}" > /dev/null
-  docker-machine ssh swarm-node-$i "sudo chmod +x ${BOOTLOCAL_FILE} && sync && tce-status -i | grep -q bash | tce-load -wi bash && bash /var/lib/boot2docker/bootlocal.sh"
+export CONSUL_MASTER=$(docker-machine ip swarm-node-consul)
+echoInfo "Creating ${TOTAL_NODES} swarm nodes";
+# setup swarm nodes
+for i in $(seq 1 $TOTAL_NODES)
+do
+	STATUS=$(docker-machine status swarm-node-$i 2>&1)
+	if [ $? -ne 0 ]; then
+		if [ $i == 1 ]; then
+			export SWARM_MASTER="--swarm-master";
+		else
+			export SWARM_MASTER=""
+		fi
+
+		docker-machine create -d virtualbox --swarm ${SWARM_MASTER} --swarm-discovery="consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-store=consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-advertise=eth1:2376" swarm-node-$i
+		        docker run -d -p 5000:5000 --name registry registry
+        		BOOTLOCAL_FILE="/var/lib/boot2docker/bootlocal.sh"
+        echo "${BOOTLOCAL_SH}" | docker-machine ssh swarm-node-$i "sudo tee ${BOOTLOCAL_FILE}" > /dev/null
+        docker-machine ssh swarm-node-$i "sudo chmod +x ${BOOTLOCAL_FILE} && sync && tce-status -i | grep -q bash | tce-load -wi bash && bash /var/lib/boot2docker/bootlocal.sh"
+        docker run -d -p 5000:5000 --name registry registry
+        read -r -d '' SSH_COMMAND <<EOF
+sudo /bin/sh -c "echo 'EXTRA_ARGS=\"\\\$EXTRA_ARGS --insecure-registry docker.registry.local:5000\"' >> /var/lib/boot2docker/profile" ; sudo /bin/sh -c "echo '127.0.0.1 docker.registry.local' >> /etc/hosts"
+EOF
+        docker-machine ssh ${CLUSTER_PREFIX}-support "${SSH_COMMAND}"
+        docker-machine restart swarm-node-$i
+        docker-machine ssh swarm-node-$i ls > /dev/null 2>&1
+        while [ $? -ne 0 ]
+        do
+            sleep 2
+            echo "waiting for swarm-node-$i"
+            docker-machine ssh swarm-node-$i ls > /dev/null 2>&1
+        done
+
+		eval $(docker-machine env swarm-node-$i)
+		export NODE_IP=$(docker-machine ip swarm-node-$i)
+		docker-compose -f compose/consul-agent.yml up -d
+		docker-compose -f compose/registrator.yml up -d
+
+		if [ $i == 1 ]; then
+			# setup a load balancer
+			docker-compose -f compose/node-lb.yml up -d
+		fi
+	fi
 done
+
 
 # make sure swarm is ready/healthy
 eval $(docker-machine env --swarm swarm-node-1)

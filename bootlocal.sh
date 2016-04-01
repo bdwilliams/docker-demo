@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 if ! tce-status -i | grep -q iana-etc
 then
@@ -11,7 +11,7 @@ if ! pidof rpcbind > /dev/null
 then
   sudo /usr/local/etc/init.d/nfs-client start
 fi
-sudo mount -t nfs -o noacl,async,nolock ${NFS_HOST_IP}:${TRINITY_SHARE} /nfs
+sudo mount -t nfs -o noacl,async ${NFS_HOST_IP}:${TRINITY_SHARE} /nfs
 if [ ! -e /usr/local/bin/convoy ]
 then
   wget https://github.com/rancher/convoy/releases/download/v0.5.0.2-rancher/convoy.tar.gz
@@ -23,7 +23,7 @@ sudo mkdir -p /etc/docker/plugins/
 if [ ! -e /etc/docker/plugins/convoy.spec ]
 then
   sudo rm -f /etc/docker/plugins/convoy.spec
-  sudo bash -c 'echo "unix:///var/run/convoy/convoy.sock" > /etc/docker/plugins/convoy.spec'
+  sudo sh -c 'echo "unix:///var/run/convoy/convoy.sock" > /etc/docker/plugins/convoy.spec'
 fi
 if ! pidof convoy > /dev/null
 then

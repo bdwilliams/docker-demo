@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 export LOADBALANCER=$(docker-machine ip swarm-node-consul)
 docker-machine ls

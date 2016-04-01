@@ -1,35 +1,20 @@
 version: '2'
 
 services:
-  registrator:  
-    command: -internal consul://${CONSUL_MASTER}:8500
-    image: gliderlabs/registrator:latest
-    restart: always
-    volumes:
-      - "/var/run/docker.sock:/tmp/docker.sock"
-    network_mode: "bridge"
-  lb:
-    build: ../lb
-    container_name: lb
-    ports:
-      - "80:80"
-    environment:
-      - APP_NAME=compose_web
-      - CONSUL_URL=${CONSUL_MASTER}:8500
-    depends_on:
-      - web
-      - registrator
-    network_mode: "bridge"
   web:
-    build: ../web
+    image: bdwilliams/rethinkdb-simple-app
     restart: always
     environment:
-      - GIN_MODE=release
-      - APP_PORT=8080
-    network_mode: "bridge"
+      - APP_PORT=8000
+      - RETHINKDB_HOST=dbmaster
+    networks:
+      - front
+      - back
     ports:
-      - "8080"
+      - "8000"
 
-# networks:
-#   front:
-#     driver: overlay
+networks:
+  front:
+    driver: overlay
+  back:
+    driver: overlay

@@ -1,0 +1,40 @@
+version: '2'
+
+services:
+  dbmaster:
+    container_name: rethink-master
+    image: rethinkdb
+    ports:
+      - "8080"
+      - "28015"
+    restart: always
+    volume_driver: convoy
+    volumes:
+       - dbdata:/data
+    networks:
+      - back
+    environment:
+      SERVICE_NAME: dbmaster
+  dbslave:
+    image: rethinkdb
+    command: rethinkdb --join rethink-master
+    links:
+      - dbmaster
+    restart: always
+    networks:
+      - back
+    ports:
+      - "28015"
+    # volume_driver: convoy
+    # volumes:
+    #    - dbdata:/data
+    environment:
+      SERVICE_NAME: dbslave
+
+networks:
+  back:
+    driver: overlay
+
+volumes:
+  dbdata:
+    driver: convoy

@@ -1,0 +1,9 @@
+version: '2'
+
+services:
+  registrator:  
+    command: -ip ${NODE_IP} consul://${CONSUL_MASTER}:8500
+    image: gliderlabs/registrator:latest
+    restart: always
+    volumes:
+      - "/var/run/docker.sock:/tmp/docker.sock"

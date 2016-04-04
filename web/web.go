@@ -51,7 +51,7 @@ func rootCall(w http.ResponseWriter, r *http.Request) {
 
 	s := []string{"IP Address: " + strings.Join(a[:], ", "), "\nTotal Views: " + views}
 	fmt.Println(s)
-	io.WriteString(w, strings.Join(s[:], " "))
+	io.WriteString(w, "Total Views: "+views+"\n")
 }
 
 func main() {

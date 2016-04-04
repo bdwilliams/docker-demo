@@ -1,7 +1,7 @@
 #!/bin/bash
 # set -x
 
-export TOTAL_NODES=1 # how many host (swarm) nodes should be running
+export TOTAL_NODES=3 # how many host (swarm) nodes should be running
 export WEB_SCALE=1 # how many nodes should be running after the web service scale
 export DB_SCALE=1 # how many nodes should be running after the db service scale
 
@@ -58,6 +58,7 @@ if [ $? -ne 0 ]; then
 	export NODE_IP=$(docker-machine ip swarm-node-consul)
 	eval $(docker-machine env swarm-node-consul)
 	docker-compose -f compose/consul-master.yml up -d
+	docker-compose -f compose/registry.yml up -d
 fi
 
 # set up shared networking
@@ -111,23 +112,21 @@ do
 		fi
 
 		docker-machine create -d virtualbox --swarm ${SWARM_MASTER} --swarm-discovery="consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-store=consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-advertise=eth1:2376" swarm-node-$i
-		        docker run -d -p 5000:5000 --name registry registry
-        		BOOTLOCAL_FILE="/var/lib/boot2docker/bootlocal.sh"
-        echo "${BOOTLOCAL_SH}" | docker-machine ssh swarm-node-$i "sudo tee ${BOOTLOCAL_FILE}" > /dev/null
-        docker-machine ssh swarm-node-$i "sudo chmod +x ${BOOTLOCAL_FILE} && sync && tce-status -i | grep -q bash | tce-load -wi bash && bash /var/lib/boot2docker/bootlocal.sh"
-        docker run -d -p 5000:5000 --name registry registry
-        read -r -d '' SSH_COMMAND <<EOF
-sudo /bin/sh -c "echo 'EXTRA_ARGS=\"\\\$EXTRA_ARGS --insecure-registry docker.registry.local:5000\"' >> /var/lib/boot2docker/profile" ; sudo /bin/sh -c "echo '127.0.0.1 docker.registry.local' >> /etc/hosts"
+    BOOTLOCAL_FILE="/var/lib/boot2docker/bootlocal.sh"
+    echo "${BOOTLOCAL_SH}" | docker-machine ssh swarm-node-$i "sudo tee ${BOOTLOCAL_FILE}" > /dev/null
+    docker-machine ssh swarm-node-$i "sudo chmod +x ${BOOTLOCAL_FILE} && sync && tce-status -i | grep -q bash | tce-load -wi bash && bash /var/lib/boot2docker/bootlocal.sh"
+    read -r -d '' SSH_COMMAND <<EOF
+sudo /bin/sh -c "echo 'EXTRA_ARGS=\"\\\$EXTRA_ARGS --insecure-registry docker.registry.local:5000\"' >> /var/lib/boot2docker/profile" ; sudo /bin/sh -c "echo '${CONSUL_MASTER} docker.registry.local' >> /etc/hosts"
 EOF
-        docker-machine ssh ${CLUSTER_PREFIX}-support "${SSH_COMMAND}"
-        docker-machine restart swarm-node-$i
+    docker-machine ssh swarm-node-$i "${SSH_COMMAND}"
+    docker-machine restart swarm-node-$i
+    docker-machine ssh swarm-node-$i ls > /dev/null 2>&1
+    while [ $? -ne 0 ]
+    do
+        sleep 2
+        echo "waiting for swarm-node-$i"
         docker-machine ssh swarm-node-$i ls > /dev/null 2>&1
-        while [ $? -ne 0 ]
-        do
-            sleep 2
-            echo "waiting for swarm-node-$i"
-            docker-machine ssh swarm-node-$i ls > /dev/null 2>&1
-        done
+    done
 
 		eval $(docker-machine env swarm-node-$i)
 		export NODE_IP=$(docker-machine ip swarm-node-$i)

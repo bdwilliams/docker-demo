@@ -1,7 +1,7 @@
 #!/bin/bash
 # set -x
 
-export TOTAL_NODES=1 # how many host (swarm) nodes should be running
+export TOTAL_NODES=2 # how many host (swarm) nodes should be running
 export WEB_SCALE=1 # how many nodes should be running after the web service scale
 export DB_SCALE=1 # how many nodes should be running after the db service scale
 
@@ -58,6 +58,7 @@ if [ $? -ne 0 ]; then
 	export NODE_IP=$(docker-machine ip swarm-node-consul)
 	eval $(docker-machine env swarm-node-consul)
 	docker-compose -f compose/consul-master.yml up -d
+	docker-compose -f compose/registry.yml up -d
 fi
 
 # set up shared networking
@@ -111,23 +112,21 @@ do
 		fi
 
 		docker-machine create -d virtualbox --swarm ${SWARM_MASTER} --swarm-discovery="consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-store=consul://${CONSUL_MASTER}:8500" --engine-opt="cluster-advertise=eth1:2376" swarm-node-$i
-		        docker run -d -p 5000:5000 --name registry registry
-        		BOOTLOCAL_FILE="/var/lib/boot2docker/bootlocal.sh"
-        echo "${BOOTLOCAL_SH}" | docker-machine ssh swarm-node-$i "sudo tee ${BOOTLOCAL_FILE}" > /dev/null
-        docker-machine ssh swarm-node-$i "sudo chmod +x ${BOOTLOCAL_FILE} && sync && tce-status -i | grep -q bash | tce-load -wi bash && bash /var/lib/boot2docker/bootlocal.sh"
-        docker run -d -p 5000:5000 --name registry registry
-        read -r -d '' SSH_COMMAND <<EOF
-sudo /bin/sh -c "echo 'EXTRA_ARGS=\"\\\$EXTRA_ARGS --insecure-registry docker.registry.local:5000\"' >> /var/lib/boot2docker/profile" ; sudo /bin/sh -c "echo '127.0.0.1 docker.registry.local' >> /etc/hosts"
+		BOOTLOCAL_FILE="/var/lib/boot2docker/bootlocal.sh"
+    echo "${BOOTLOCAL_SH}" | docker-machine ssh swarm-node-$i "sudo tee ${BOOTLOCAL_FILE}" > /dev/null
+    docker-machine ssh swarm-node-$i "sudo chmod +x ${BOOTLOCAL_FILE} && sync && tce-status -i | grep -q bash | tce-load -wi bash && bash /var/lib/boot2docker/bootlocal.sh"
+    read -r -d '' SSH_COMMAND <<EOF
+sudo /bin/sh -c "echo 'EXTRA_ARGS=\"\\\$EXTRA_ARGS --insecure-registry docker.registry.local:5000\"' >> /var/lib/boot2docker/profile" ; sudo /bin/sh -c "echo '${CONSUL_MASTER} docker.registry.local' >> /etc/hosts"
 EOF
-        docker-machine ssh ${CLUSTER_PREFIX}-support "${SSH_COMMAND}"
-        docker-machine restart swarm-node-$i
-        docker-machine ssh swarm-node-$i ls > /dev/null 2>&1
-        while [ $? -ne 0 ]
-        do
-            sleep 2
-            echo "waiting for swarm-node-$i"
-            docker-machine ssh swarm-node-$i ls > /dev/null 2>&1
-        done
+    docker-machine ssh swarm-node-$1 "${SSH_COMMAND}"
+    docker-machine restart swarm-node-$i
+    docker-machine ssh swarm-node-$i ls > /dev/null 2>&1
+    while [ $? -ne 0 ]
+    do
+      sleep 2
+      echo "waiting for swarm-node-$i"
+      docker-machine ssh swarm-node-$i ls > /dev/null 2>&1
+    done
 
 		eval $(docker-machine env swarm-node-$i)
 		export NODE_IP=$(docker-machine ip swarm-node-$i)
@@ -137,10 +136,10 @@ EOF
 		if [ $i == 1 ]; then
 			# setup a load balancer
 			docker-compose -f compose/node-lb.yml up -d
+			docker-compose -f compose/postgres-master.yml up -d
 		fi
 	fi
 done
-
 
 # make sure swarm is ready/healthy
 eval $(docker-machine env --swarm swarm-node-1)
@@ -163,21 +162,25 @@ docker network rm example_app_temp
 export SWARM_MASTER_NODE=$(docker-machine ip swarm-node-1)
 export LOADBALANCER=$(docker-machine ip swarm-node-consul)
 
-# run a db service
-eval $(docker-machine env --swarm swarm-node-1)
-docker-compose -f compose/rethinkdb.yml up -d
-
 # run some apps
+# eval $(docker-machine env --swarm swarm-node-1)
+# docker-compose -f compose/apps.yml up -d
+
+# start db slaves
 eval $(docker-machine env --swarm swarm-node-1)
-docker-compose -f compose/apps.yml up -d
+docker-compose -f compose/postgres-slave.yml up -d
+
+# # now scale the db slaves
+# eval $(docker-machine env --swarm swarm-node-1)
+# docker-compose -f compose/postgres-slave.yml scale postgres-slave=${TOTAL_NODES}
 
 # now scale the node load balancers
-eval $(docker-machine env --swarm swarm-node-1)
-docker-compose -f compose/node-lb.yml scale lb=${TOTAL_NODES}
+# eval $(docker-machine env --swarm swarm-node-1)
+# docker-compose -f compose/node-lb.yml scale lb=${TOTAL_NODES}
 
 # now scale the master load balancer
-eval $(docker-machine env swarm-node-consul)
-docker-compose -f compose/main-lb.yml up -d
+# eval $(docker-machine env swarm-node-consul)
+# docker-compose -f compose/main-lb.yml up -d
 
 echo "Checking Docker Machine List:";
 docker-machine ls

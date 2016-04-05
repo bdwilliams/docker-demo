@@ -1,0 +1,29 @@
+version: '2'
+
+services:
+  postgres-master:
+    restart: always
+    image: sameersbn/postgresql:9.4-18
+    ports:
+      - "5432:5432"
+    environment:
+      DB_USER: dbuser
+      DB_PASS: RBh6cw6piC
+      DB_NAME: dbname
+      REPLICATION_USER: repluser
+      REPLICATION_PASS: repluserpass
+      PG_PASSWORD: UcEfqqR74W
+      SERVICE_NAME: dbmaster
+    volume_driver: convoy
+    volumes:
+       - dbdata:/var/lib/postgresql
+    networks:
+      - back
+
+networks:
+  back:
+    driver: overlay
+
+volumes:
+  dbdata:
+    driver: convoy
